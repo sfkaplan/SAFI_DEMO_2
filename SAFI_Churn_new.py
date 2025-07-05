@@ -2,8 +2,6 @@ import warnings
 warnings.filterwarnings("ignore")  # Oculta warnings de Python
 
 import streamlit as st
-st.set_option('logger.level', 'ERROR')  # Oculta logs de Streamlit
-
 import pandas as pd
 import numpy as np
 import cloudpickle
@@ -118,14 +116,15 @@ with tab_interpretabilidad:
         # Calcular SHAP local para la predicción actual
         if hasattr(modelo, "feature_importances_"):
             explainer = shap.TreeExplainer(modelo)
+            shap_values = explainer.shap_values(X_input)[1]  # Clase 1: churn
         else:
             explainer = shap.LinearExplainer(modelo, X_input)
+            shap_values = explainer.shap_values(X_input)
 
-        shap_values = explainer.shap_values(X_input)
-
-        st.write("#### SHAP Force Plot")
+        st.write("#### Gráfico SHAP local")
         shap.initjs()
-        st_shap = shap.force_plot(
-            explainer.expected_value[1], shap_values[1], X_input, feature_names=feature_names, matplotlib=True
+        force_plot_html = shap.force_plot(
+            explainer.expected_value[1], shap_values, X_input, feature_names=feature_names
         )
-        st.pyplot(bbox_inches='tight')
+        st.components.v1.html(force_plot_html.html(), height=300)
+
