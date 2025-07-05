@@ -1,5 +1,10 @@
-shap==0.46.0
+streamlit
+pandas
+numpy
 scikit-learn==1.6.1
-lightgbm==4.6.0
-streamlit==1.46.1
-matplotlib==3.10.3
+lightgbm
+cloudpickle
+matplotlib
+scipy
+joblib
+shap
