@@ -5,9 +5,9 @@ import streamlit as st
 import pandas as pd
 import numpy as np
 import cloudpickle
+import shap
 import matplotlib.pyplot as plt
 from scipy.stats import norm
-import shap
 
 # --- Cargar modelos y preprocesador ---
 @st.cache_resource
@@ -28,6 +28,24 @@ def cargar_modelos():
 
 models, preprocessor = cargar_modelos()
 feature_names = preprocessor.get_feature_names_out()
+
+# --- Cachear SHAP global ---
+@st.cache_resource
+def calcular_shap_global(modelo, X_sample):
+    explainer = shap.TreeExplainer(modelo)
+    shap_values = explainer.shap_values(X_sample)
+    return explainer, shap_values
+
+# --- Cargar dataset y muestrear para SHAP global ---
+@st.cache_resource
+def cargar_y_preprocesar_datos():
+    df = pd.read_csv("datos_churn.csv")
+    df_sample = df.sample(n=min(500, len(df)), random_state=42)  # muestra máx 500 filas
+    X_full_sample = preprocessor.transform(df_sample.drop("churn", axis=1))
+    y_full = df_sample["churn"].values
+    return df, X_full_sample, y_full
+
+df_full, X_sample, y_sample = cargar_y_preprocesar_datos()
 
 # --- Título ---
 st.title("🔮 Predicción y Análisis de Churn en Fondos de Inversión")
@@ -78,10 +96,6 @@ with tab_interpretabilidad:
     if modelo_elegido == "Regresión Logística":
         st.subheader("📑 Coeficientes, errores estándar y p-valores")
 
-        df = pd.read_csv("datos_churn.csv")
-        X_full = preprocessor.transform(df.drop("churn", axis=1))
-        y_full = df["churn"].values
-
         def coeficientes_pvalores(log_model, X, y):
             X_design = np.hstack([np.ones((X.shape[0], 1)), X])
             p = log_model.predict_proba(X)[:, 1]
@@ -101,56 +115,27 @@ with tab_interpretabilidad:
                 "p-valor": p_values.round(4)
             })
 
-        coef_df = coeficientes_pvalores(models["Regresión Logística"], X_full, y_full)
+        coef_df = coeficientes_pvalores(models["Regresión Logística"], X_sample, y_sample)
         st.dataframe(coef_df)
 
     else:
-        st.subheader("🌳 SHAP Values: Importancia de las variables")
-        df = pd.read_csv("datos_churn.csv")
-        X_full = preprocessor.transform(df.drop("churn", axis=1))
+        st.subheader("🌎 SHAP Global: importancia promedio")
+        explainer, shap_values = calcular_shap_global(modelo, X_sample)
+        shap.summary_plot(shap_values, X_sample, feature_names=feature_names, show=False)
+        st.pyplot(plt.gcf())
+        plt.clf()
 
-        try:
-            # Probar TreeExplainer
-            explainer = shap.TreeExplainer(models[modelo_elegido])
-            shap_values = explainer.shap_values(X_full)
+        st.subheader("📍 SHAP Local: contribución individual")
+        shap_values_local = explainer.shap_values(X_input)
+        shap.force_plot(
+            explainer.expected_value,
+            shap_values_local,
+            X_input,
+            feature_names=feature_names,
+            matplotlib=True,
+            show=False
+        )
+        st.pyplot(plt.gcf())
+        plt.clf()
 
-            # Detectar estructura de shap_values
-            if isinstance(shap_values, list):
-                shap_matrix = shap_values[1]
-                expected_value = explainer.expected_value[1]
-            else:
-                shap_matrix = shap_values
-                expected_value = explainer.expected_value
-
-        except Exception:
-            # Fallback a KernelExplainer si TreeExplainer falla
-            st.warning("TreeExplainer no soportado, usando KernelExplainer (más lento).")
-            explainer = shap.KernelExplainer(models[modelo_elegido].predict_proba, shap.sample(X_full, 100))
-            shap_matrix = explainer.shap_values(X_full)[1]
-            expected_value = explainer.expected_value[1]
-
-        # Gráfico global summary
-        st.write("#### SHAP Summary Plot (Global)")
-        fig_global, ax = plt.subplots()
-        shap.summary_plot(shap_matrix, X_full, feature_names=feature_names, show=False)
-        st.pyplot(fig_global)
-
-        # Gráfico local waterfall
-        st.write("#### SHAP Waterfall Plot (Predicción actual)")
-        shap_values_input = explainer.shap_values(X_input)
-        if isinstance(shap_values_input, list):
-            shap_row = shap_values_input[1][0]
-            expected_row = explainer.expected_value[1]
-        else:
-            shap_row = shap_values_input[0]
-            expected_row = explainer.expected_value
-
-        fig_local, ax = plt.subplots()
-        shap.waterfall_plot(shap.Explanation(
-            values=shap_row,
-            base_values=expected_row,
-            data=X_input[0],
-            feature_names=feature_names
-        ), show=False)
-        st.pyplot(fig_local)
 
