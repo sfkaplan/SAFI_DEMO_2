@@ -1,13 +1,14 @@
 import warnings
-warnings.filterwarnings("ignore", category=DeprecationWarning)
+warnings.filterwarnings("ignore")  # Oculta warnings de Python
 
 import streamlit as st
+st.set_option('logger.level', 'ERROR')  # Oculta logs de Streamlit
+
 import pandas as pd
 import numpy as np
 import cloudpickle
-import matplotlib.pyplot as plt
 import shap
-from scipy.stats import norm
+import matplotlib.pyplot as plt
 
 # --- Cargar modelos y preprocesador ---
 @st.cache_resource
@@ -83,6 +84,7 @@ with tab_interpretabilidad:
         y_full = df["churn"].values
 
         def coeficientes_pvalores(log_model, X, y):
+            from scipy.stats import norm
             X_design = np.hstack([np.ones((X.shape[0], 1)), X])
             p = log_model.predict_proba(X)[:, 1]
             V = np.diag(p * (1 - p))
@@ -104,26 +106,26 @@ with tab_interpretabilidad:
         coef_df = coeficientes_pvalores(models["Regresión Logística"], X_full, y_full)
         st.dataframe(coef_df)
 
-    elif modelo_elegido == "Random Forest":
-        st.subheader("🌳 Importancia Global (Random Forest)")
-        st.image("feature_importance_rf.png", use_column_width=True)
+    else:
+        st.subheader("🌳 Importancia global (SHAP)")
 
-        st.subheader("🔍 Explicación Local (SHAP values)")
-        explainer_rf = shap.TreeExplainer(models["Random Forest"])
-        shap_values_rf = explainer_rf.shap_values(X_input)
-        st.set_option('deprecation.showPyplotGlobalUse', False)
-        shap.force_plot(explainer_rf.expected_value[1], shap_values_rf[1], X_input, matplotlib=True, show=False)
+        # Mostrar la imagen precalculada
+        imagen_global = "shap_rf_summary.png" if modelo_elegido == "Random Forest" else "shap_lgb_summary.png"
+        st.image(imagen_global, caption="Importancia Global (SHAP)", use_container_width=True)
+
+        st.subheader("📍 Interpretabilidad local (SHAP)")
+
+        # Calcular SHAP local para la predicción actual
+        if hasattr(modelo, "feature_importances_"):
+            explainer = shap.TreeExplainer(modelo)
+        else:
+            explainer = shap.LinearExplainer(modelo, X_input)
+
+        shap_values = explainer.shap_values(X_input)
+
+        st.write("#### SHAP Force Plot")
+        shap.initjs()
+        st_shap = shap.force_plot(
+            explainer.expected_value[1], shap_values[1], X_input, feature_names=feature_names, matplotlib=True
+        )
         st.pyplot(bbox_inches='tight')
-
-    elif modelo_elegido == "LightGBM":
-        st.subheader("🌿 Importancia Global (LightGBM)")
-        st.image("feature_importance_lgb.png", use_column_width=True)
-
-        st.subheader("🔍 Explicación Local (SHAP values)")
-        explainer_lgb = shap.TreeExplainer(models["LightGBM"])
-        shap_values_lgb = explainer_lgb.shap_values(X_input)
-        st.set_option('deprecation.showPyplotGlobalUse', False)
-        shap.force_plot(explainer_lgb.expected_value[1], shap_values_lgb[1], X_input, matplotlib=True, show=False)
-        st.pyplot(bbox_inches='tight')
-
-
