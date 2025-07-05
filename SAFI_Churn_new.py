@@ -108,7 +108,7 @@ with tab_interpretabilidad:
         st.subheader("🌳 Importancia global (SHAP)")
 
         # Mostrar la imagen precalculada
-        imagen_global = "shap_rf_summary.png" if modelo_elegido == "Random Forest" else "shap_lgb_summary.png"
+        imagen_global = "feature_importance_rf.png" if modelo_elegido == "Random Forest" else "feature_importance_lgb.png"
         st.image(imagen_global, caption="Importancia Global (SHAP)", use_container_width=True)
 
         st.subheader("📍 Interpretabilidad local (SHAP)")
