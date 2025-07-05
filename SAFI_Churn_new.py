@@ -5,8 +5,8 @@ import streamlit as st
 import pandas as pd
 import numpy as np
 import cloudpickle
-import shap
 import matplotlib.pyplot as plt
+import shap
 from scipy.stats import norm
 
 # --- Cargar modelos y preprocesador ---
@@ -28,24 +28,6 @@ def cargar_modelos():
 
 models, preprocessor = cargar_modelos()
 feature_names = preprocessor.get_feature_names_out()
-
-# --- Cachear SHAP global ---
-@st.cache_resource
-def calcular_shap_global(modelo, X_sample):
-    explainer = shap.TreeExplainer(modelo)
-    shap_values = explainer.shap_values(X_sample)
-    return explainer, shap_values
-
-# --- Cargar dataset y muestrear para SHAP global ---
-@st.cache_resource
-def cargar_y_preprocesar_datos():
-    df = pd.read_csv("datos_churn.csv")
-    df_sample = df.sample(n=min(500, len(df)), random_state=42)  # muestra máx 500 filas
-    X_full_sample = preprocessor.transform(df_sample.drop("churn", axis=1))
-    y_full = df_sample["churn"].values
-    return df, X_full_sample, y_full
-
-df_full, X_sample, y_sample = cargar_y_preprocesar_datos()
 
 # --- Título ---
 st.title("🔮 Predicción y Análisis de Churn en Fondos de Inversión")
@@ -96,6 +78,10 @@ with tab_interpretabilidad:
     if modelo_elegido == "Regresión Logística":
         st.subheader("📑 Coeficientes, errores estándar y p-valores")
 
+        df = pd.read_csv("datos_churn.csv")
+        X_full = preprocessor.transform(df.drop("churn", axis=1))
+        y_full = df["churn"].values
+
         def coeficientes_pvalores(log_model, X, y):
             X_design = np.hstack([np.ones((X.shape[0], 1)), X])
             p = log_model.predict_proba(X)[:, 1]
@@ -115,27 +101,29 @@ with tab_interpretabilidad:
                 "p-valor": p_values.round(4)
             })
 
-        coef_df = coeficientes_pvalores(models["Regresión Logística"], X_sample, y_sample)
+        coef_df = coeficientes_pvalores(models["Regresión Logística"], X_full, y_full)
         st.dataframe(coef_df)
 
-    else:
-        st.subheader("🌎 SHAP Global: importancia promedio")
-        explainer, shap_values = calcular_shap_global(modelo, X_sample)
-        shap.summary_plot(shap_values, X_sample, feature_names=feature_names, show=False)
-        st.pyplot(plt.gcf())
-        plt.clf()
+    elif modelo_elegido == "Random Forest":
+        st.subheader("🌳 Importancia Global (Random Forest)")
+        st.image("feature_importance_rf.png", use_column_width=True)
 
-        st.subheader("📍 SHAP Local: contribución individual")
-        shap_values_local = explainer.shap_values(X_input)
-        shap.force_plot(
-            explainer.expected_value,
-            shap_values_local,
-            X_input,
-            feature_names=feature_names,
-            matplotlib=True,
-            show=False
-        )
-        st.pyplot(plt.gcf())
-        plt.clf()
+        st.subheader("🔍 Explicación Local (SHAP values)")
+        explainer_rf = shap.TreeExplainer(models["Random Forest"])
+        shap_values_rf = explainer_rf.shap_values(X_input)
+        st.set_option('deprecation.showPyplotGlobalUse', False)
+        shap.force_plot(explainer_rf.expected_value[1], shap_values_rf[1], X_input, matplotlib=True, show=False)
+        st.pyplot(bbox_inches='tight')
+
+    elif modelo_elegido == "LightGBM":
+        st.subheader("🌿 Importancia Global (LightGBM)")
+        st.image("feature_importance_lgb.png", use_column_width=True)
+
+        st.subheader("🔍 Explicación Local (SHAP values)")
+        explainer_lgb = shap.TreeExplainer(models["LightGBM"])
+        shap_values_lgb = explainer_lgb.shap_values(X_input)
+        st.set_option('deprecation.showPyplotGlobalUse', False)
+        shap.force_plot(explainer_lgb.expected_value[1], shap_values_lgb[1], X_input, matplotlib=True, show=False)
+        st.pyplot(bbox_inches='tight')
 
 
