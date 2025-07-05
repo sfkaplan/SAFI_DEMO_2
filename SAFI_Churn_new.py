@@ -6,8 +6,8 @@ import pandas as pd
 import numpy as np
 import cloudpickle
 import matplotlib.pyplot as plt
-import shap
 from scipy.stats import norm
+import shap
 
 # --- Cargar modelos y preprocesador ---
 @st.cache_resource
@@ -30,7 +30,7 @@ models, preprocessor = cargar_modelos()
 feature_names = preprocessor.get_feature_names_out()
 
 # --- Título ---
-st.title("🔮 Predicción y SHAP Interpretability Demo")
+st.title("🔮 Predicción y Análisis de Churn en Fondos de Inversión")
 
 # --- Sidebar: Inputs del usuario ---
 st.sidebar.header("📊 Características del Cliente")
@@ -105,31 +105,52 @@ with tab_interpretabilidad:
         st.dataframe(coef_df)
 
     else:
-        st.subheader("🌍 Importancia global (SHAP summary plot)")
-
+        st.subheader("🌳 SHAP Values: Importancia de las variables")
         df = pd.read_csv("datos_churn.csv")
         X_full = preprocessor.transform(df.drop("churn", axis=1))
 
-        # SHAP para importancia global
-        explainer = shap.TreeExplainer(models[modelo_elegido])
-        shap_values = explainer.shap_values(X_full)
+        try:
+            # Probar TreeExplainer
+            explainer = shap.TreeExplainer(models[modelo_elegido])
+            shap_values = explainer.shap_values(X_full)
 
-        st.write("Este gráfico muestra la importancia promedio de las variables en todas las predicciones.")
+            # Detectar estructura de shap_values
+            if isinstance(shap_values, list):
+                shap_matrix = shap_values[1]
+                expected_value = explainer.expected_value[1]
+            else:
+                shap_matrix = shap_values
+                expected_value = explainer.expected_value
+
+        except Exception:
+            # Fallback a KernelExplainer si TreeExplainer falla
+            st.warning("TreeExplainer no soportado, usando KernelExplainer (más lento).")
+            explainer = shap.KernelExplainer(models[modelo_elegido].predict_proba, shap.sample(X_full, 100))
+            shap_matrix = explainer.shap_values(X_full)[1]
+            expected_value = explainer.expected_value[1]
+
+        # Gráfico global summary
+        st.write("#### SHAP Summary Plot (Global)")
         fig_global, ax = plt.subplots()
-        shap.summary_plot(shap_values[1], X_full, feature_names=feature_names, show=False)
+        shap.summary_plot(shap_matrix, X_full, feature_names=feature_names, show=False)
         st.pyplot(fig_global)
 
-        st.markdown("---")
-
-        st.subheader("🔄 SHAP values para la predicción actual")
+        # Gráfico local waterfall
+        st.write("#### SHAP Waterfall Plot (Predicción actual)")
         shap_values_input = explainer.shap_values(X_input)
+        if isinstance(shap_values_input, list):
+            shap_row = shap_values_input[1][0]
+            expected_row = explainer.expected_value[1]
+        else:
+            shap_row = shap_values_input[0]
+            expected_row = explainer.expected_value
 
-        # Gráfico tipo waterfall para la instancia actual
         fig_local, ax = plt.subplots()
         shap.waterfall_plot(shap.Explanation(
-            values=shap_values_input[1][0],
-            base_values=explainer.expected_value[1],
+            values=shap_row,
+            base_values=expected_row,
             data=X_input[0],
             feature_names=feature_names
         ), show=False)
         st.pyplot(fig_local)
+
