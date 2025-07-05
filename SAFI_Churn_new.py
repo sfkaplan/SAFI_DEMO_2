@@ -1,11 +1,7 @@
-import warnings
-warnings.filterwarnings("ignore")  # Oculta warnings de Python
-
 import streamlit as st
 import pandas as pd
 import numpy as np
 import cloudpickle
-import shap
 import matplotlib.pyplot as plt
 
 # --- Cargar modelos y preprocesador ---
@@ -75,56 +71,30 @@ with tab_interpretabilidad:
     st.header("Interpretabilidad del Modelo")
 
     if modelo_elegido == "Regresión Logística":
-        st.subheader("📑 Coeficientes, errores estándar y p-valores")
+        st.subheader("📑 Coeficientes de la Regresión Logística")
 
         df = pd.read_csv("datos_churn.csv")
         X_full = preprocessor.transform(df.drop("churn", axis=1))
         y_full = df["churn"].values
 
-        def coeficientes_pvalores(log_model, X, y):
-            from scipy.stats import norm
-            X_design = np.hstack([np.ones((X.shape[0], 1)), X])
-            p = log_model.predict_proba(X)[:, 1]
-            V = np.diag(p * (1 - p))
-            XtVX = X_design.T @ V @ X_design
-            cov_matrix = np.linalg.inv(XtVX)
-
+        def coeficientes(log_model, X, y):
             coef = np.hstack([log_model.intercept_, log_model.coef_.flatten()])
-            se = np.sqrt(np.diag(cov_matrix))
-            z_scores = coef / se
-            p_values = 2 * (1 - norm.cdf(np.abs(z_scores)))
-
             return pd.DataFrame({
                 "Variable": ["Intercepto"] + list(feature_names),
-                "Coeficiente": coef.round(4),
-                "Error estándar": se.round(4),
-                "p-valor": p_values.round(4)
+                "Coeficiente": coef.round(4)
             })
 
-        coef_df = coeficientes_pvalores(models["Regresión Logística"], X_full, y_full)
+        coef_df = coeficientes(models["Regresión Logística"], X_full, y_full)
         st.dataframe(coef_df)
 
     else:
-        st.subheader("🌳 Importancia global (SHAP)")
-
-        # Mostrar la imagen precalculada
-        imagen_global = "feature_importance_rf.png" if modelo_elegido == "Random Forest" else "feature_importance_lgb.png"
-        st.image(imagen_global, caption="Importancia Global (SHAP)", use_container_width=True)
-
-        st.subheader("📍 Interpretabilidad local (SHAP)")
-
-        # Calcular SHAP local para la predicción actual
-        if hasattr(modelo, "feature_importances_"):
-            explainer = shap.TreeExplainer(modelo)
-            shap_values = explainer.shap_values(X_input)[1]  # Clase 1: churn
-        else:
-            explainer = shap.LinearExplainer(modelo, X_input)
-            shap_values = explainer.shap_values(X_input)
-
-        st.write("#### Gráfico SHAP local")
-        shap.initjs()
-        force_plot_html = shap.force_plot(
-            explainer.expected_value[1], shap_values, X_input, feature_names=feature_names
+        st.subheader("🌳 Importancia Global de las Variables")
+        # Cargar la imagen correspondiente
+        imagen_global = (
+            "feature_importance_rf.png"
+            if modelo_elegido == "Random Forest"
+            else "feature_importance_lgb.png"
         )
-        st.components.v1.html(force_plot_html.html(), height=300)
+        st.image(imagen_global, caption="Importancia Global de Variables", use_container_width=True)
+
 
